@@ -1,0 +1,11 @@
+get_transcript:
+  name: Get transcript
+  description: Return the current/recent Assist transcript snapshot for one Assist Satellite.
+  fields:
+    assist_satellite_entity:
+      name: Assist Satellite
+      description: The assist_satellite entity whose recent transcript should be returned.
+      required: true
+      selector:
+        entity:
+          domain: assist_satellite

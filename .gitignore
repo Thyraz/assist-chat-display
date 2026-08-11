@@ -1,0 +1,7 @@
+ha-src/
+__pycache__/
+*.pyc
+
+.agents/skills/
+
+skills-lock.json
