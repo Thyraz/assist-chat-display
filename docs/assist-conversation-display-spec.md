@@ -1,8 +1,8 @@
 # Assist Conversation Display Spec
 
-Status: agreed design, backend POC scaffold and bundled V1 card implemented.
+Status: stable V1 release.
 
-Last consolidated: 2026-08-11.
+Last consolidated: 2026-08-12.
 
 ## Goal
 
@@ -44,7 +44,7 @@ The card must not parse raw Home Assistant Assist pipeline debug events. It cons
 
 For passive display of existing satellites, use backend-side adaptive polling of Home Assistant's in-memory Assist pipeline debug runs.
 
-Polling is triggered or accelerated when a watched Assist Satellite enters active states such as `listening`, `processing`, or `responding`. The POC should start around 100-200 ms while active, slow after idle, and coalesce browser updates to avoid UI churn.
+Polling is triggered or accelerated when a watched Assist Satellite enters active states such as `listening`, `processing`, or `responding`. The integration polls around 100-200 ms while active, slows after idle, and coalesces browser updates to avoid UI churn.
 
 Current Home Assistant does not expose passive Assist pipeline events as ordinary event-bus events. The built-in Assist chat gets live events because it starts its own pipeline run through `assist_pipeline/run`; that is not the same problem as observing a Voice PE or other existing satellite.
 
@@ -62,7 +62,7 @@ On load, the card applies a Snapshot Freshness Limit before hydrating from an in
 
 Users may read transcripts only for selected Assist Satellites they can read. Integration options and setup remain admin-only.
 
-If Home Assistant's current permission helpers do not allow this cleanly during the POC, prefer stricter access over broader access.
+If Home Assistant's current permission helpers do not allow this cleanly, prefer stricter access over broader access.
 
 ## Backend API
 
@@ -180,7 +180,7 @@ Final replacement uses the same id:
 - Use a transparent card background so the dashboard section background remains visible.
 - Default to blue user bubbles and green assistant bubbles, exposed through project-owned CSS variables with Home Assistant theme fallbacks.
 - Keep thinking/tool-call details in the data model. Do not expose them in the normal V1 room UI; a later optional expandable detail view can follow Home Assistant's Assist chat pattern with smaller fixed-width formatting for tool data.
-- Auto-scroll when new messages arrive if the user is already near the bottom, and force scroll on a new active voice interaction.
+- Auto-scroll when new messages arrive if the user is already near the bottom, keep following the bottom during active updates, and force scroll on initial snapshots and new active voice interactions.
 - Keep the Browser Transcript Cache bounded; default `max_messages` is 20, with validated user configuration.
 - Support optional frontend-only inactivity clearing through `clear_after`, defaulting to `0` meaning disabled.
 - Keep the card header optional and disabled by default for wall-tablet layouts.
@@ -203,27 +203,28 @@ show_header: false
 
 The V1 card defines `getConfigForm`, `getStubConfig`, `getCardSize`, `getGridOptions`, and a `window.customCards` entry with `getEntitySuggestion` for `assist_satellite.*` entities.
 
-## POC Plan
+## Release Contents
 
-1. Create the minimal custom integration skeleton for `assist_chat_display`. Done.
-2. Add source-baseline checks against the current Home Assistant Core and Frontend files before implementing capture logic. Done for Core `2026.8.1` and Frontend `20260729.6`.
-3. Implement a backend-only capture module that accepts an `assist_satellite_entity` parameter. Done.
-4. Read current in-memory Assist debug runs and filter by `run-start.data.satellite_id`. Done.
-5. Normalize `run-start`, `stt-start`, `stt-end`, `intent-progress`, `intent-end`, `tts-*`, and `error` events into Transcript Messages and Transcript Deltas. Partially done: visible transcript events plus the streaming TTS marker are normalized; no visible TTS message is emitted.
-6. Log normalized deltas for one selected satellite. Done at debug log level.
-7. Add a WebSocket subscription that returns an initial snapshot and then deltas. Done.
-8. Add `assist_chat_display.get_transcript` as a response-only action. Done.
-9. Only after the backend proves streaming capture, build the bundled dashboard card. Done.
-10. Add config flow/options flow after the capture and card path are proven. Partially done: setup-only config flow exists and the card has a graphical config form; integration options remain out of scope for V1.
+- Custom integration skeleton for `assist_chat_display`.
+- Source-baseline checks against Home Assistant Core `2026.8.1` and Frontend `20260729.6`.
+- Backend capture module that accepts an `assist_satellite_entity` parameter.
+- In-memory Assist debug run reader filtered by `run-start.data.satellite_id`.
+- Transcript normalization for visible user/assistant messages, streaming progress, final replacement, compact errors, and the streaming TTS marker.
+- Debug logging for normalized transcript deltas.
+- WebSocket subscription that returns an initial snapshot and streams subsequent deltas.
+- `assist_chat_display.get_transcript` response-only action.
+- Bundled `custom:assist-chat-display-card` dashboard card.
+- Setup-only config flow so the integration can be loaded through Home Assistant's UI.
+- Graphical card config form and card picker suggestion for `assist_satellite.*` entities.
 
-The implemented POC includes a minimal setup-only config flow so the integration can be loaded through Home Assistant's UI without YAML. It does not store satellite configuration; each WebSocket/action caller still provides `assist_satellite_entity`.
+The V1 release includes a minimal setup-only config flow so the integration can be loaded through Home Assistant's UI without YAML. It does not store satellite configuration; each WebSocket/action caller still provides `assist_satellite_entity`.
 
 ## Risks
 
 - Home Assistant Assist debug internals may change. Re-check current source before implementation changes.
 - Debug retention is limited to recent in-memory runs; this project deliberately does not create a backend transcript history.
 - Polling must be adaptive and coalesced to avoid unnecessary CPU and UI churn.
-- Permission checks must be validated against current Home Assistant helpers during POC.
+- Permission checks must be revalidated against current Home Assistant helpers when access-control behavior changes.
 - Streaming semantics may differ across Assist providers, LLMs, tools, and streaming TTS configurations.
 
 ## Source Baseline

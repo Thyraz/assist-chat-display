@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyTranscriptEvent,
   hydrateFromSnapshot,
+  isNearBottom,
   isSnapshotFresh,
   normalizeConfig,
   upsertMessages,
@@ -53,6 +54,11 @@ assert.throws(
   () => normalizeConfig({ entity: "sensor.living_room" }),
   /assist_satellite/
 );
+
+assert.equal(isNearBottom(1000, 700, 300), true);
+assert.equal(isNearBottom(1000, 620, 300), true);
+assert.equal(isNearBottom(1000, 500, 300), false);
+assert.equal(isNearBottom(240, 0, 300), true);
 
 assert.equal(
   isSnapshotFresh(snapshot("2026-08-11T19:56:00.000Z", []), 300, now),

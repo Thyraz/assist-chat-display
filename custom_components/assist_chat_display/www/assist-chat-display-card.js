@@ -15,6 +15,8 @@ const NUMBER_LIMITS = Object.freeze({
   clear_after: { min: 0, max: 86400 },
 });
 
+const MIN_AUTO_SCROLL_DISTANCE = 96;
+
 let warnedMarkdownUnavailable = false;
 
 export function normalizeConfig(config) {
@@ -140,6 +142,15 @@ export function upsertMessages(messages, incomingMessages, maxMessages) {
   }
 
   return trimMessages(sortMessages([...byId.values()]), maxMessages);
+}
+
+export function isNearBottom(scrollHeight, scrollTop, clientHeight) {
+  if (scrollHeight <= clientHeight + 1) {
+    return true;
+  }
+
+  const threshold = Math.max(MIN_AUTO_SCROLL_DISTANCE, clientHeight * 0.25);
+  return scrollHeight - scrollTop - clientHeight <= threshold;
 }
 
 function normalizeMergeConfig(config) {
@@ -316,6 +327,10 @@ function defineCard() {
       this._clearTimer = undefined;
       this._manualReconnectTimer = undefined;
       this._manualReconnectDelay = 1000;
+      this._scrollAnimationFrames = [];
+      this._scrollRequestToken = 0;
+      this._stickToBottom = true;
+      this._resizeObserver = undefined;
       this._connectionListeners = [];
       this._connected = false;
       this._rendered = false;
@@ -432,10 +447,14 @@ function defineCard() {
     _handleTranscriptEvent(event) {
       const nearBottom = this._isNearBottom();
       const forceScroll =
-        event?.message?.role === "user" && event?.type === "message_add";
+        event?.type === "snapshot" ||
+        (event?.message?.role === "user" && event?.type === "message_add");
       this._messages = applyTranscriptEvent(this._messages, event, this._config);
-      this._forceScroll = forceScroll || nearBottom;
-      this._setStatus("ready", "");
+      this._forceScroll = forceScroll || this._stickToBottom || nearBottom;
+      if (this._forceScroll) {
+        this._stickToBottom = true;
+      }
+      this._setStatus("ready", "", false);
       this._scheduleClear();
       this._render();
     }
@@ -514,19 +533,26 @@ function defineCard() {
 
     _clearTimers() {
       this._clearManualReconnect();
+      this._clearScrollFrames();
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect();
+        this._resizeObserver = undefined;
+      }
       if (this._clearTimer) {
         window.clearTimeout(this._clearTimer);
         this._clearTimer = undefined;
       }
     }
 
-    _setStatus(status, message) {
+    _setStatus(status, message, render = true) {
       if (this._status === status && this._statusMessage === message) {
         return;
       }
       this._status = status;
       this._statusMessage = message;
-      this._render();
+      if (render) {
+        this._render();
+      }
     }
 
     _render() {
@@ -544,7 +570,16 @@ function defineCard() {
           </ha-card>
         `;
         this._rendered = true;
+        this.shadowRoot.querySelector(".messages").addEventListener(
+          "scroll",
+          () => {
+            this._stickToBottom = this._isNearBottom();
+          },
+          { passive: true }
+        );
+        this._observeMessageLayout();
       }
+      this._observeMessageLayout();
 
       const header = this.shadowRoot.querySelector(".header");
       const messages = this.shadowRoot.querySelector(".messages");
@@ -565,7 +600,7 @@ function defineCard() {
 
       if (this._forceScroll) {
         this._forceScroll = false;
-        window.requestAnimationFrame(() => this._scrollToBottom());
+        this._requestScrollToBottom();
       }
     }
 
@@ -608,7 +643,83 @@ function defineCard() {
         return true;
       }
 
-      return messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
+      return isNearBottom(
+        messages.scrollHeight,
+        messages.scrollTop,
+        messages.clientHeight
+      );
+    }
+
+    _requestScrollToBottom() {
+      const token = ++this._scrollRequestToken;
+      this._clearScrollFrames(false);
+      const markdownElements = [
+        ...this.shadowRoot.querySelectorAll(".messages ha-markdown"),
+      ];
+
+      const scrollIfCurrent = () => {
+        if (token !== this._scrollRequestToken || !this._connected) {
+          return;
+        }
+        this._scrollToBottom();
+      };
+
+      scrollIfCurrent();
+
+      this._afterAnimationFrame()
+        .then(() => {
+          scrollIfCurrent();
+          return this._waitForMarkdown(markdownElements);
+        })
+        .then(() => this._afterAnimationFrame())
+        .then(scrollIfCurrent);
+    }
+
+    _observeMessageLayout() {
+      if (this._resizeObserver || !window.ResizeObserver) {
+        return;
+      }
+
+      const messages = this.shadowRoot?.querySelector(".messages");
+      if (!messages) {
+        return;
+      }
+
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._stickToBottom) {
+          this._requestScrollToBottom();
+        }
+      });
+      this._resizeObserver.observe(messages);
+    }
+
+    _afterAnimationFrame() {
+      return new Promise((resolve) => {
+        const frame = window.requestAnimationFrame(resolve);
+        this._scrollAnimationFrames.push(frame);
+      });
+    }
+
+    async _waitForMarkdown(markdownElements) {
+      const updates = markdownElements
+        .map((element) => element.updateComplete)
+        .filter((updateComplete) => updateComplete?.then);
+
+      if (updates.length === 0) {
+        return;
+      }
+
+      await Promise.allSettled(updates);
+    }
+
+    _clearScrollFrames(invalidate = true) {
+      if (invalidate) {
+        this._scrollRequestToken += 1;
+      }
+      for (const frame of this._scrollAnimationFrames) {
+        window.cancelAnimationFrame(frame);
+      }
+      this._scrollAnimationFrames = [];
     }
 
     _scrollToBottom() {
@@ -617,6 +728,7 @@ function defineCard() {
         return;
       }
       messages.scrollTop = messages.scrollHeight;
+      this._stickToBottom = true;
     }
   }
 

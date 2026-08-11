@@ -58,7 +58,7 @@ async def async_setup(hass: Any, config: dict[str, Any]) -> bool:
 async def async_setup_entry(hass: Any, entry: Any) -> bool:
     """Set up a config entry.
 
-    The POC has no stored satellite configuration; callers provide the satellite
+    The integration has no stored satellite configuration; callers provide the satellite
     entity through the WebSocket command or response-only action.
     """
     return True

@@ -1,6 +1,6 @@
-# Backend POC
+# Backend
 
-Status: implemented scaffold with bundled V1 dashboard card.
+Status: stable V1 release.
 
 ## What Exists
 
@@ -93,7 +93,7 @@ YAML-mode dashboards need the resource configured manually:
 
 ```yaml
 resources:
-  - url: /assist_chat_display/assist-chat-display-card.js?v=0.1.0
+  - url: /assist_chat_display/assist-chat-display-card.js?v=1.0.0
     type: module
 ```
 

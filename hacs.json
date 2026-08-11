@@ -2,5 +2,6 @@
   "name": "Assist Chat Display",
   "content_in_root": false,
   "render_readme": true,
+  "hide_default_branch": true,
   "homeassistant": "2026.8.1"
 }
