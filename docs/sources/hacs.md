@@ -35,8 +35,8 @@ For manual releases, keep these versions aligned:
 
 Use a real GitHub Release for each distributed version. Do not rely on bare tags.
 
-When the public repository URL is known, add repository-specific values to the integration manifest:
+Repository-specific integration manifest values:
 
-- `documentation`
-- `issue_tracker`
-- `codeowners`
+- `documentation`: `https://github.com/Thyraz/assist-chat-display`
+- `issue_tracker`: `https://github.com/Thyraz/assist-chat-display/issues`
+- `codeowners`: `["@Thyraz"]`

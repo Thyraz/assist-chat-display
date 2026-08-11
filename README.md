@@ -17,7 +17,11 @@ On Home Assistant `2026.6` and newer, the card can be suggested automatically wh
 
 ### HACS
 
-Install this repository as a HACS custom repository of type **Integration**, then restart Home Assistant.
+Add this repository to HACS as a custom repository of type **Integration**, then install it and restart Home Assistant:
+
+```text
+https://github.com/Thyraz/assist-chat-display
+```
 
 After restart, add the **Assist Chat Display** integration under:
 
