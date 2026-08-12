@@ -6,6 +6,7 @@ import {
   isNearBottom,
   isSnapshotFresh,
   normalizeConfig,
+  remainingViewportHeight,
   upsertMessages,
 } from "../../custom_components/assist_chat_display/www/assist-chat-display-card.js";
 
@@ -35,6 +36,9 @@ function snapshot(generatedAt, messages) {
 assert.deepEqual(
   normalizeConfig({
     entity: "assist_satellite.living_room",
+    display_scale: "999",
+    height_mode: "custom",
+    height: " calc(100dvh - 80px) ",
     max_messages: "999",
     max_initial_age: "300",
     clear_after: "10",
@@ -43,11 +47,39 @@ assert.deepEqual(
   {
     type: undefined,
     entity: "assist_satellite.living_room",
+    display_scale: 250,
+    height_mode: "custom",
+    height: "calc(100dvh - 80px)",
     max_messages: 100,
     max_initial_age: 300,
     clear_after: 10,
     show_header: true,
   }
+);
+
+assert.equal(
+  normalizeConfig({
+    entity: "assist_satellite.living_room",
+    height_mode: "invalid",
+    height: 720,
+  }).height_mode,
+  "default"
+);
+
+assert.equal(
+  normalizeConfig({
+    entity: "assist_satellite.living_room",
+    display_scale: "74",
+  }).display_scale,
+  75
+);
+
+assert.equal(
+  normalizeConfig({
+    entity: "assist_satellite.living_room",
+    display_scale: "127.5",
+  }).display_scale,
+  127.5
 );
 
 assert.throws(
@@ -59,6 +91,9 @@ assert.equal(isNearBottom(1000, 700, 300), true);
 assert.equal(isNearBottom(1000, 620, 300), true);
 assert.equal(isNearBottom(1000, 500, 300), false);
 assert.equal(isNearBottom(240, 0, 300), true);
+assert.equal(remainingViewportHeight(80, 900), 820);
+assert.equal(remainingViewportHeight(800, 900), 240);
+assert.equal(remainingViewportHeight(Number.NaN, 900), 240);
 
 assert.equal(
   isSnapshotFresh(snapshot("2026-08-11T19:56:00.000Z", []), 300, now),

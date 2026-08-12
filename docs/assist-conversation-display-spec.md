@@ -183,6 +183,12 @@ Final replacement uses the same id:
 - If `ha-markdown` is unavailable, fall back to safe plain-text rendering with preserved whitespace and log one browser warning.
 - Use a transparent card background so the dashboard section background remains visible.
 - Default to blue user bubbles and green assistant bubbles, exposed through project-owned CSS variables with Home Assistant theme fallbacks.
+- Support Display Scale through a `display_scale` card option. It is a percentage with default `100`, clamped to `75` through `250`, and scales text, bubbles, spacing, radius, activity indicators, and bubble pixel width caps without changing transcript data or dashboard grid size.
+- Expose Display Scale as `--assist-chat-display-scale` so theme/uix/card-mod style overrides can still fine-tune or replace the generated sizes.
+- Support Card Height Policy through `height_mode` with values `default`, `viewport`, and `custom`.
+- In `default` height mode, the dashboard controls card height. This is the recommended mode for Sections dashboards, where users should size the card through Home Assistant's layout controls.
+- In `viewport` height mode, the card fills the remaining visible viewport from its current top edge, using `window.visualViewport.height` with `window.innerHeight` fallback. Recompute on resize and visual viewport changes, and clamp to a minimum of 240 px. This mode is intended for Panel dashboards and other full-height surfaces.
+- In `custom` height mode, apply the optional `height` string as a CSS height value. Empty or missing `height` falls back to dashboard-controlled height. Do not implement a custom CSS parser.
 - Keep thinking/tool-call details in the data model. Do not expose them in the normal V1 room UI; a later optional expandable detail view can follow Home Assistant's Assist chat pattern with smaller fixed-width formatting for tool data.
 - Auto-scroll when new messages arrive if the user is already near the bottom, keep following the bottom during active updates, and force scroll on initial snapshots and new active voice interactions.
 - Keep the Browser Transcript Cache bounded; default `max_messages` is 20, with validated user configuration.
@@ -199,6 +205,9 @@ Final replacement uses the same id:
 ```yaml
 type: custom:assist-chat-display-card
 entity: assist_satellite.living_room
+display_scale: 100
+height_mode: default
+height: ""
 max_messages: 20
 max_initial_age: 300
 clear_after: 0
@@ -206,6 +215,10 @@ show_header: false
 ```
 
 The V1 card defines `getConfigForm`, `getStubConfig`, `getCardSize`, `getGridOptions`, and a `window.customCards` entry with `getEntitySuggestion` for `assist_satellite.*` entities.
+
+Display Scale uses Home Assistant's standard number slider selector in the visual editor. This keeps the editor aligned with Home Assistant defaults, including the selector's built-in numeric input.
+
+Card Height Policy uses Home Assistant's standard form controls. Show `height_mode` as a select control with user-facing labels for Section dashboard / Default, Panel dashboard / Full height, and Custom height. Show `height` as an optional text field; it is used only when `height_mode` is `custom`.
 
 ## Release Contents
 

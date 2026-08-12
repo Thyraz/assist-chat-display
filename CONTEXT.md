@@ -71,3 +71,11 @@ _Avoid_: Exception dump, failed transcript
 **Unsupported Assist Transcript State**:
 A card state shown when the installed Home Assistant version or runtime does not expose enough Assist debug data for this project to build a Displayed Conversation.
 _Avoid_: Empty transcript, stale transcript
+
+**Display Scale**:
+A configurable visual scale factor for a Transcript Consumer's Displayed Conversation. It enlarges or shrinks the conversation's text, bubbles, spacing, and activity indicators without changing transcript data or Home Assistant dashboard layout.
+_Avoid_: Browser zoom, font size, card size
+
+**Card Height Policy**:
+The Transcript Consumer setting that determines whether the dashboard controls card height, the card fills the remaining viewport from its current top edge, or the user supplies a custom CSS height.
+_Avoid_: Panel detection, section sizing, browser viewport hack

@@ -48,6 +48,8 @@ Example card config:
 ```yaml
 type: custom:assist-chat-display-card
 entity: assist_satellite.living_room
+display_scale: 100
+height_mode: default
 max_messages: 20
 max_initial_age: 300
 clear_after: 0
@@ -59,10 +61,21 @@ Options:
 | Option | Default | Description |
 | --- | ---: | --- |
 | `entity` | required | The `assist_satellite.*` entity whose conversation should be displayed. |
+| `display_scale` | `100` | Visual scale factor, to enlarge the Chat UI independently from your HA theme or browser settings. |
+| `height_mode` | `default` | Height behavior: `default`, `viewport`, or `custom`. |
+| `height` | `""` | CSS height used when `height_mode` is `custom`, for example `720px` or `calc(100dvh - 80px)`. |
 | `max_messages` | `20` | Maximum number of bubbles kept in the browser. |
 | `max_initial_age` | `300` | Ignore older messages when the card loads, in seconds. |
 | `clear_after` | `0` | Clear the card after inactivity, in seconds. `0` disables auto-clear. |
 | `show_header` | `false` | Show the selected satellite name above the bubbles. |
+
+In the visual editor, `display_scale` uses Home Assistant's standard number slider control.
+
+Height guidance:
+
+- Use `height_mode: default` in Sections dashboards and size the card with Home Assistant's layout controls.
+- Use `height_mode: viewport` for Panel dashboards when the card should fill the visible space below the Home Assistant top bar.
+- Use `height_mode: custom` with `height` for special layouts.
 
 ## Action
 
@@ -83,14 +96,19 @@ The response contains the selected satellite and a `messages` array with user an
 
 The card background is transparent so it inherits the dashboard or section background. Bubble colors can be changed through theme CSS variables or tools such as uix (card-mod successor).
 
+Use `display_scale` first when you want the whole conversation to appear larger or smaller. The variables below are for theme-level overrides and fine-tuning.
+
 Common variables:
 
 ```css
+--assist-chat-display-scale: 1;
 --assist-chat-display-user-bubble-background: var(--blue-color);
 --assist-chat-display-assistant-bubble-background: var(--green-color);
 --assist-chat-display-user-bubble-color: #ffffff;
 --assist-chat-display-assistant-bubble-color: #ffffff;
 --assist-chat-display-error-bubble-background: var(--error-color);
+--assist-chat-display-padding: 8px;
+--assist-chat-display-gap: 8px;
 --assist-chat-display-radius: 20px;
 --assist-chat-display-font-size: 16px;
 ```

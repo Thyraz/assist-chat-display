@@ -1,8 +1,19 @@
 const CARD_TYPE = "assist-chat-display-card";
 const WS_TYPE_SUBSCRIBE = "assist_chat_display/subscribe";
 const ASSIST_SATELLITE_DOMAIN = "assist_satellite";
+const HEIGHT_MODE_DEFAULT = "default";
+const HEIGHT_MODE_VIEWPORT = "viewport";
+const HEIGHT_MODE_CUSTOM = "custom";
+const HEIGHT_MODES = Object.freeze([
+  HEIGHT_MODE_DEFAULT,
+  HEIGHT_MODE_VIEWPORT,
+  HEIGHT_MODE_CUSTOM,
+]);
 
 export const DEFAULT_CONFIG = Object.freeze({
+  display_scale: 100,
+  height_mode: HEIGHT_MODE_DEFAULT,
+  height: "",
   max_messages: 20,
   max_initial_age: 300,
   clear_after: 0,
@@ -10,12 +21,14 @@ export const DEFAULT_CONFIG = Object.freeze({
 });
 
 const NUMBER_LIMITS = Object.freeze({
+  display_scale: { min: 75, max: 250 },
   max_messages: { min: 2, max: 100 },
   max_initial_age: { min: 0, max: 86400 },
   clear_after: { min: 0, max: 86400 },
 });
 
 const MIN_AUTO_SCROLL_DISTANCE = 96;
+const MIN_VIEWPORT_HEIGHT = 240;
 
 let warnedMarkdownUnavailable = false;
 
@@ -36,6 +49,13 @@ export function normalizeConfig(config) {
   return {
     type: config.type,
     entity,
+    display_scale: normalizeNumber(
+      config.display_scale,
+      DEFAULT_CONFIG.display_scale,
+      NUMBER_LIMITS.display_scale
+    ),
+    height_mode: normalizeHeightMode(config.height_mode),
+    height: normalizeHeight(config.height),
     max_messages: normalizeInteger(
       config.max_messages,
       DEFAULT_CONFIG.max_messages,
@@ -55,6 +75,15 @@ export function normalizeConfig(config) {
   };
 }
 
+function normalizeHeightMode(value) {
+  const mode = String(value ?? DEFAULT_CONFIG.height_mode).trim();
+  return HEIGHT_MODES.includes(mode) ? mode : DEFAULT_CONFIG.height_mode;
+}
+
+function normalizeHeight(value) {
+  return String(value ?? "").trim();
+}
+
 function normalizeInteger(value, fallback, limits) {
   if (value === undefined || value === null || value === "") {
     return fallback;
@@ -66,6 +95,19 @@ function normalizeInteger(value, fallback, limits) {
   }
 
   return Math.min(limits.max, Math.max(limits.min, Math.trunc(parsed)));
+}
+
+function normalizeNumber(value, fallback, limits) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(limits.max, Math.max(limits.min, parsed));
 }
 
 export function isSnapshotFresh(snapshot, maxInitialAgeSeconds, nowMs = Date.now()) {
@@ -151,6 +193,16 @@ export function isNearBottom(scrollHeight, scrollTop, clientHeight) {
 
   const threshold = Math.max(MIN_AUTO_SCROLL_DISTANCE, clientHeight * 0.25);
   return scrollHeight - scrollTop - clientHeight <= threshold;
+}
+
+export function remainingViewportHeight(top, viewportHeight) {
+  const remaining = Number(viewportHeight) - Number(top);
+
+  if (!Number.isFinite(remaining)) {
+    return MIN_VIEWPORT_HEIGHT;
+  }
+
+  return Math.max(MIN_VIEWPORT_HEIGHT, Math.floor(remaining));
 }
 
 function normalizeMergeConfig(config) {
@@ -244,6 +296,46 @@ function defineCard() {
             name: "",
             schema: [
               {
+                name: "display_scale",
+                selector: {
+                  number: {
+                    mode: "slider",
+                    min: NUMBER_LIMITS.display_scale.min,
+                    max: NUMBER_LIMITS.display_scale.max,
+                    unit_of_measurement: "%",
+                    step: 5,
+                  },
+                },
+              },
+              {
+                name: "height_mode",
+                selector: {
+                  select: {
+                    mode: "dropdown",
+                    options: [
+                      {
+                        value: HEIGHT_MODE_DEFAULT,
+                        label: "Section dashboard / Default",
+                      },
+                      {
+                        value: HEIGHT_MODE_VIEWPORT,
+                        label: "Panel dashboard / Full height",
+                      },
+                      {
+                        value: HEIGHT_MODE_CUSTOM,
+                        label: "Custom height",
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                name: "height",
+                selector: {
+                  text: {},
+                },
+              },
+              {
                 name: "max_messages",
                 selector: {
                   number: {
@@ -290,6 +382,9 @@ function defineCard() {
         computeLabel: (schema) =>
           ({
             entity: "Assist Satellite",
+            display_scale: "Display scale",
+            height_mode: "Height mode",
+            height: "Custom height",
             max_messages: "Maximum messages",
             max_initial_age: "Initial snapshot age",
             clear_after: "Clear after inactivity",
@@ -297,6 +392,7 @@ function defineCard() {
           })[schema.name],
         computeHelper: (schema) =>
           ({
+            height: "Used when height mode is Custom.",
             max_initial_age: "Ignore older debug snapshots when the card loads.",
             clear_after: "Set to 0 to keep messages visible.",
           })[schema.name],
@@ -332,6 +428,8 @@ function defineCard() {
       this._stickToBottom = true;
       this._resizeObserver = undefined;
       this._connectionListeners = [];
+      this._heightListeners = [];
+      this._heightAnimationFrame = undefined;
       this._connected = false;
       this._rendered = false;
       this._forceScroll = false;
@@ -372,12 +470,15 @@ function defineCard() {
     connectedCallback() {
       this._connected = true;
       this._render();
+      this._addHeightListeners();
       this._addConnectionListeners();
       this._subscribeIfReady();
     }
 
     disconnectedCallback() {
       this._connected = false;
+      this._removeHeightListeners();
+      this._setCardHeight("");
       this._removeConnectionListeners();
       this._unsubscribeSubscription();
       this._clearTimers();
@@ -457,6 +558,47 @@ function defineCard() {
       this._setStatus("ready", "", false);
       this._scheduleClear();
       this._render();
+    }
+
+    _addHeightListeners() {
+      if (!this._connected || this._heightListeners.length > 0) {
+        return;
+      }
+
+      const updateHeight = () => this._scheduleHeightUpdate();
+      window.addEventListener("resize", updateHeight);
+      this._heightListeners.push([window, "resize", updateHeight]);
+
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", updateHeight);
+        window.visualViewport.addEventListener("scroll", updateHeight);
+        this._heightListeners.push(
+          [window.visualViewport, "resize", updateHeight],
+          [window.visualViewport, "scroll", updateHeight]
+        );
+      }
+    }
+
+    _removeHeightListeners() {
+      for (const [target, eventType, listener] of this._heightListeners) {
+        target.removeEventListener?.(eventType, listener);
+      }
+      this._heightListeners = [];
+      if (this._heightAnimationFrame !== undefined) {
+        window.cancelAnimationFrame(this._heightAnimationFrame);
+        this._heightAnimationFrame = undefined;
+      }
+    }
+
+    _scheduleHeightUpdate() {
+      if (!this._connected || this._heightAnimationFrame !== undefined) {
+        return;
+      }
+
+      this._heightAnimationFrame = window.requestAnimationFrame(() => {
+        this._heightAnimationFrame = undefined;
+        this._applyHeightPolicy();
+      });
     }
 
     _addConnectionListeners() {
@@ -587,6 +729,11 @@ function defineCard() {
 
       header.hidden = !this._config?.show_header;
       header.textContent = this._headerText();
+      this.style.setProperty(
+        "--assist-chat-display-config-scale",
+        String((this._config?.display_scale ?? DEFAULT_CONFIG.display_scale) / 100)
+      );
+      this._applyHeightPolicy();
 
       messages.replaceChildren(
         ...this._messages.map((message) => this._renderMessage(message))
@@ -601,6 +748,37 @@ function defineCard() {
       if (this._forceScroll) {
         this._forceScroll = false;
         this._requestScrollToBottom();
+      }
+    }
+
+    _applyHeightPolicy() {
+      const mode = this._config?.height_mode ?? DEFAULT_CONFIG.height_mode;
+
+      if (mode === HEIGHT_MODE_VIEWPORT) {
+        this._setCardHeight(`${this._remainingViewportHeight()}px`);
+        return;
+      }
+
+      if (mode === HEIGHT_MODE_CUSTOM && this._config?.height) {
+        this._setCardHeight(this._config.height);
+        return;
+      }
+
+      this._setCardHeight("");
+    }
+
+    _remainingViewportHeight() {
+      return remainingViewportHeight(
+        this.getBoundingClientRect().top,
+        window.visualViewport?.height ?? window.innerHeight
+      );
+    }
+
+    _setCardHeight(height) {
+      this.style.height = height;
+      const card = this.shadowRoot?.querySelector(".card");
+      if (card) {
+        card.style.height = height || "";
       }
     }
 
@@ -832,10 +1010,25 @@ const CARD_STYLES = `
     --assist-chat-display-assistant-bubble-color: var(--text-primary-color, #ffffff);
     --assist-chat-display-error-bubble-background: var(--error-color, #db4437);
     --assist-chat-display-error-bubble-color: var(--text-primary-color, #ffffff);
-    --assist-chat-display-padding: var(--ha-space-2, 8px);
-    --assist-chat-display-gap: var(--ha-space-2, 8px);
-    --assist-chat-display-radius: var(--ha-border-radius-xl, 20px);
-    --assist-chat-display-font-size: var(--ha-font-size-l, 16px);
+    --assist-chat-display-config-scale: 1;
+    --assist-chat-display-scale: var(--assist-chat-display-config-scale);
+    --assist-chat-display-padding: calc(var(--ha-space-2, 8px) * var(--assist-chat-display-scale));
+    --assist-chat-display-gap: calc(var(--ha-space-2, 8px) * var(--assist-chat-display-scale));
+    --assist-chat-display-radius: calc(var(--ha-border-radius-xl, 20px) * var(--assist-chat-display-scale));
+    --assist-chat-display-font-size: calc(var(--ha-font-size-l, 16px) * var(--assist-chat-display-scale));
+    --assist-chat-display-header-font-size: calc(var(--ha-font-size-s, 12px) * var(--assist-chat-display-scale));
+    --assist-chat-display-status-font-size: calc(var(--ha-font-size-s, 12px) * var(--assist-chat-display-scale));
+    --assist-chat-display-bubble-padding-block: calc(8px * var(--assist-chat-display-scale));
+    --assist-chat-display-bubble-padding-inline: calc(11px * var(--assist-chat-display-scale));
+    --assist-chat-display-bubble-min-width: calc(34px * var(--assist-chat-display-scale));
+    --assist-chat-display-bubble-min-height: calc(30px * var(--assist-chat-display-scale));
+    --assist-chat-display-bubble-max-width: calc(720px * var(--assist-chat-display-scale));
+    --assist-chat-display-tail-radius: calc(4px * var(--assist-chat-display-scale));
+    --assist-chat-display-activity-width: calc(34px * var(--assist-chat-display-scale));
+    --assist-chat-display-activity-height: calc(14px * var(--assist-chat-display-scale));
+    --assist-chat-display-activity-gap: calc(4px * var(--assist-chat-display-scale));
+    --assist-chat-display-dot-size: calc(6px * var(--assist-chat-display-scale));
+    --assist-chat-display-dot-rise: calc(-3px * var(--assist-chat-display-scale));
   }
 
   .card {
@@ -852,7 +1045,7 @@ const CARD_STYLES = `
 
   .header {
     color: var(--secondary-text-color);
-    font-size: var(--ha-font-size-s, 12px);
+    font-size: var(--assist-chat-display-header-font-size);
     line-height: 1.3;
     padding: var(--assist-chat-display-padding);
     padding-bottom: 0;
@@ -886,10 +1079,10 @@ const CARD_STYLES = `
 
   .bubble {
     box-sizing: border-box;
-    max-width: min(82%, 720px);
-    min-width: 34px;
-    min-height: 30px;
-    padding: 8px 11px;
+    max-width: min(82%, var(--assist-chat-display-bubble-max-width));
+    min-width: var(--assist-chat-display-bubble-min-width);
+    min-height: var(--assist-chat-display-bubble-min-height);
+    padding: var(--assist-chat-display-bubble-padding-block) var(--assist-chat-display-bubble-padding-inline);
     border-radius: var(--assist-chat-display-radius);
     font-size: var(--assist-chat-display-font-size);
     line-height: 1.35;
@@ -898,14 +1091,14 @@ const CARD_STYLES = `
   }
 
   .bubble.user {
-    border-bottom-right-radius: 4px;
+    border-bottom-right-radius: var(--assist-chat-display-tail-radius);
     background: var(--assist-chat-display-user-bubble-background);
     color: var(--assist-chat-display-user-bubble-color);
     --markdown-link-color: currentColor;
   }
 
   .bubble.assistant {
-    border-bottom-left-radius: 4px;
+    border-bottom-left-radius: var(--assist-chat-display-tail-radius);
     background: var(--assist-chat-display-assistant-bubble-background);
     color: var(--assist-chat-display-assistant-bubble-color);
     --markdown-link-color: currentColor;
@@ -936,15 +1129,15 @@ const CARD_STYLES = `
   .activity-dots {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    width: 34px;
-    height: 14px;
+    gap: var(--assist-chat-display-activity-gap);
+    width: var(--assist-chat-display-activity-width);
+    height: var(--assist-chat-display-activity-height);
     vertical-align: middle;
   }
 
   .activity-dots span {
-    width: 6px;
-    height: 6px;
+    width: var(--assist-chat-display-dot-size);
+    height: var(--assist-chat-display-dot-size);
     border-radius: 999px;
     background: currentColor;
     opacity: 0.45;
@@ -953,7 +1146,7 @@ const CARD_STYLES = `
 
   .status {
     color: var(--error-color);
-    font-size: var(--ha-font-size-s, 12px);
+    font-size: var(--assist-chat-display-status-font-size);
     line-height: 1.3;
     padding: 0 var(--assist-chat-display-padding) var(--assist-chat-display-padding);
   }
@@ -965,7 +1158,7 @@ const CARD_STYLES = `
     }
 
     35% {
-      transform: translateY(-3px);
+      transform: translateY(var(--assist-chat-display-dot-rise));
       opacity: 0.9;
     }
   }
