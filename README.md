@@ -4,6 +4,10 @@ Assist Chat Display is a Home Assistant custom integration with a bundled dashbo
 
 It shows the current conversation of one selected `assist_satellite.*` entity as chat bubbles on a dashboard. The intended use case is a wall tablet or smart display in the same room as a voice satellite, so spoken Assist interactions are also visible on the screen.
 
+## Preview
+
+<img src="docs/img/preview.gif" alt="Assist Chat Display preview" width="627">
+
 ## Features
 
 - Dashboard card bundled with the integration: `custom:assist-chat-display-card`
