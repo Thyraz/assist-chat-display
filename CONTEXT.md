@@ -28,9 +28,9 @@ _Avoid_: Card, widget
 The frontend-only memory held by a Transcript Consumer for the Displayed Conversation it has observed during the current browser session.
 _Avoid_: Global cache, persistent transcript store
 
-**Snapshot Freshness Limit**:
-The maximum age at which a Recent Transcript Snapshot is allowed to hydrate a freshly loaded Transcript Consumer.
-_Avoid_: History retention, cache lifetime
+**Message Max Age**:
+A Transcript Consumer policy that hides each Transcript Message once the message's own latest known activity is older than the configured age. A disabled Message Max Age leaves observed messages visible until another policy removes them.
+_Avoid_: Snapshot freshness, inactivity clear, transcript retention
 
 **Recent Transcript Snapshot**:
 A best-effort view of Displayed Conversation data that can still be reconstructed from Home Assistant's current in-memory Assist debug runs.

@@ -251,7 +251,7 @@ def normalize_run(run: DebugRun) -> _RunResult:
                 intent_output, "response", "speech", "plain", "speech"
             )
             response_type = _dig(intent_output, "response", "response_type")
-            if isinstance(response_text, str) and response_text:
+            if isinstance(response_text, str):
                 if assistant_created_at is None:
                     assistant_created_at = timestamp
                 assistant_updated_at = timestamp

@@ -60,7 +60,7 @@ The backend is not transcript history. It can reconstruct only a Recent Transcri
 
 The browser keeps its own Browser Transcript Cache for messages it has already observed while open. If the dashboard reloads, it can only rebuild from the current Recent Transcript Snapshot.
 
-On load, the card applies a Snapshot Freshness Limit before hydrating from an initial snapshot. The default limit is 300 seconds. Older snapshots are ignored so dashboards do not show stale conversations indefinitely.
+The card applies Message Max Age as a frontend display policy. On load, it hydrates only messages whose own latest known activity is still within the configured age. While the card remains open, messages disappear individually when they become older than that limit. The default limit is 300 seconds; `0` disables age-based hiding.
 
 ## Access Control
 
@@ -192,7 +192,7 @@ Final replacement uses the same id:
 - Keep thinking/tool-call details in the data model. Do not expose them in the normal V1 room UI; a later optional expandable detail view can follow Home Assistant's Assist chat pattern with smaller fixed-width formatting for tool data.
 - Auto-scroll when new messages arrive if the user is already near the bottom, keep following the bottom during active updates, and force scroll on initial snapshots and new active voice interactions.
 - Keep the Browser Transcript Cache bounded; default `max_messages` is 20, with validated user configuration.
-- Support optional frontend-only inactivity clearing through `clear_after`, defaulting to `0` meaning disabled.
+- Support frontend-only Message Max Age through `message_max_age`, defaulting to 300 seconds and using `0` to keep messages visible.
 - Keep the card header optional and disabled by default for wall-tablet layouts.
 - Reconnect WebSocket subscriptions automatically with backoff after connection loss or Home Assistant restart.
 - Show compact English errors inside the card for connection, permission, integration, and invalid-entity failures.
@@ -209,8 +209,7 @@ display_scale: 100
 height_mode: default
 height: ""
 max_messages: 20
-max_initial_age: 300
-clear_after: 0
+message_max_age: 300
 show_header: false
 ```
 

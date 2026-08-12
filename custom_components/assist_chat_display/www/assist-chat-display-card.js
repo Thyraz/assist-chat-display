@@ -15,16 +15,14 @@ export const DEFAULT_CONFIG = Object.freeze({
   height_mode: HEIGHT_MODE_DEFAULT,
   height: "",
   max_messages: 20,
-  max_initial_age: 300,
-  clear_after: 0,
+  message_max_age: 300,
   show_header: false,
 });
 
 const NUMBER_LIMITS = Object.freeze({
   display_scale: { min: 75, max: 250 },
   max_messages: { min: 2, max: 100 },
-  max_initial_age: { min: 0, max: 86400 },
-  clear_after: { min: 0, max: 86400 },
+  message_max_age: { min: 0, max: 86400 },
 });
 
 const MIN_AUTO_SCROLL_DISTANCE = 96;
@@ -61,15 +59,10 @@ export function normalizeConfig(config) {
       DEFAULT_CONFIG.max_messages,
       NUMBER_LIMITS.max_messages
     ),
-    max_initial_age: normalizeInteger(
-      config.max_initial_age,
-      DEFAULT_CONFIG.max_initial_age,
-      NUMBER_LIMITS.max_initial_age
-    ),
-    clear_after: normalizeInteger(
-      config.clear_after,
-      DEFAULT_CONFIG.clear_after,
-      NUMBER_LIMITS.clear_after
+    message_max_age: normalizeInteger(
+      config.message_max_age,
+      DEFAULT_CONFIG.message_max_age,
+      NUMBER_LIMITS.message_max_age
     ),
     show_header: Boolean(config.show_header ?? DEFAULT_CONFIG.show_header),
   };
@@ -110,19 +103,6 @@ function normalizeNumber(value, fallback, limits) {
   return Math.min(limits.max, Math.max(limits.min, parsed));
 }
 
-export function isSnapshotFresh(snapshot, maxInitialAgeSeconds, nowMs = Date.now()) {
-  if (!snapshot || typeof snapshot !== "object" || !snapshot.generated_at) {
-    return false;
-  }
-
-  const generatedAtMs = Date.parse(snapshot.generated_at);
-  if (!Number.isFinite(generatedAtMs)) {
-    return false;
-  }
-
-  return nowMs - generatedAtMs <= maxInitialAgeSeconds * 1000;
-}
-
 export function applyTranscriptEvent(messages, event, config, nowMs = Date.now()) {
   const normalizedConfig = normalizeMergeConfig(config);
 
@@ -136,30 +116,53 @@ export function applyTranscriptEvent(messages, event, config, nowMs = Date.now()
   }
 
   if (!event?.message) {
-    return messages.slice();
+    return applyMessageMaxAge(
+      trimMessages(sortMessages(messages), normalizedConfig.max_messages),
+      normalizedConfig.message_max_age,
+      nowMs
+    );
   }
 
-  return upsertMessages(messages, [event.message], normalizedConfig.max_messages);
+  return upsertMessages(
+    messages,
+    [event.message],
+    normalizedConfig.max_messages,
+    normalizedConfig.message_max_age,
+    nowMs
+  );
 }
 
 export function hydrateFromSnapshot(messages, snapshot, config, nowMs = Date.now()) {
   const normalizedConfig = normalizeMergeConfig(config);
 
   if (
-    !isSnapshotFresh(snapshot, normalizedConfig.max_initial_age, nowMs) ||
+    !snapshot ||
+    typeof snapshot !== "object" ||
     !Array.isArray(snapshot.messages)
   ) {
-    return trimMessages(sortMessages(messages), normalizedConfig.max_messages);
+    return applyMessageMaxAge(
+      trimMessages(sortMessages(messages), normalizedConfig.max_messages),
+      normalizedConfig.message_max_age,
+      nowMs
+    );
   }
 
   return upsertMessages(
     messages,
     snapshot.messages,
-    normalizedConfig.max_messages
+    normalizedConfig.max_messages,
+    normalizedConfig.message_max_age,
+    nowMs
   );
 }
 
-export function upsertMessages(messages, incomingMessages, maxMessages) {
+export function upsertMessages(
+  messages,
+  incomingMessages,
+  maxMessages,
+  messageMaxAge = DEFAULT_CONFIG.message_max_age,
+  nowMs = Date.now()
+) {
   const byId = new Map();
 
   for (const message of messages ?? []) {
@@ -183,7 +186,11 @@ export function upsertMessages(messages, incomingMessages, maxMessages) {
     }
   }
 
-  return trimMessages(sortMessages([...byId.values()]), maxMessages);
+  return applyMessageMaxAge(
+    trimMessages(sortMessages([...byId.values()]), maxMessages),
+    messageMaxAge,
+    nowMs
+  );
 }
 
 export function isNearBottom(scrollHeight, scrollTop, clientHeight) {
@@ -212,10 +219,10 @@ function normalizeMergeConfig(config) {
       DEFAULT_CONFIG.max_messages,
       NUMBER_LIMITS.max_messages
     ),
-    max_initial_age: normalizeInteger(
-      config?.max_initial_age,
-      DEFAULT_CONFIG.max_initial_age,
-      NUMBER_LIMITS.max_initial_age
+    message_max_age: normalizeInteger(
+      config?.message_max_age,
+      DEFAULT_CONFIG.message_max_age,
+      NUMBER_LIMITS.message_max_age
     ),
   };
 }
@@ -257,8 +264,58 @@ function trimMessages(messages, maxMessages) {
   return messages.slice(messages.length - normalizedMax);
 }
 
+export function applyMessageMaxAge(messages, messageMaxAge, nowMs = Date.now()) {
+  const normalizedMaxAge = normalizeInteger(
+    messageMaxAge,
+    DEFAULT_CONFIG.message_max_age,
+    NUMBER_LIMITS.message_max_age
+  );
+
+  if (normalizedMaxAge === 0) {
+    return messages.slice();
+  }
+
+  return messages.filter((message) => {
+    const activityMs = messageActivityMs(message);
+    return (
+      Number.isFinite(activityMs) &&
+      nowMs - activityMs <= normalizedMaxAge * 1000
+    );
+  });
+}
+
+export function messageActivityMs(message) {
+  const updatedMs = Date.parse(message?.updated_at ?? "");
+  if (Number.isFinite(updatedMs)) {
+    return updatedMs;
+  }
+
+  return Date.parse(message?.created_at ?? "");
+}
+
+export function nextMessageExpiryMs(messages, messageMaxAge, nowMs = Date.now()) {
+  const normalizedMaxAge = normalizeInteger(
+    messageMaxAge,
+    DEFAULT_CONFIG.message_max_age,
+    NUMBER_LIMITS.message_max_age
+  );
+
+  if (normalizedMaxAge === 0) {
+    return undefined;
+  }
+
+  const expiryTimes = (messages ?? [])
+    .map((message) => messageActivityMs(message) + normalizedMaxAge * 1000)
+    .filter((expiryMs) => Number.isFinite(expiryMs) && expiryMs > nowMs);
+
+  return expiryTimes.length > 0 ? Math.min(...expiryTimes) : undefined;
+}
+
 function compareUpdatedAt(left, right) {
-  return compareIso(left.updated_at ?? left.created_at, right.updated_at ?? right.created_at);
+  return compareIso(
+    left.updated_at ?? left.created_at,
+    right.updated_at ?? right.created_at
+  );
 }
 
 function compareIso(left, right) {
@@ -292,21 +349,21 @@ function defineCard() {
             },
           },
           {
+            name: "display_scale",
+            selector: {
+              number: {
+                mode: "slider",
+                min: NUMBER_LIMITS.display_scale.min,
+                max: NUMBER_LIMITS.display_scale.max,
+                unit_of_measurement: "%",
+                step: 5,
+              },
+            },
+          },
+          {
             type: "grid",
             name: "",
             schema: [
-              {
-                name: "display_scale",
-                selector: {
-                  number: {
-                    mode: "slider",
-                    min: NUMBER_LIMITS.display_scale.min,
-                    max: NUMBER_LIMITS.display_scale.max,
-                    unit_of_measurement: "%",
-                    step: 5,
-                  },
-                },
-              },
               {
                 name: "height_mode",
                 selector: {
@@ -335,6 +392,12 @@ function defineCard() {
                   text: {},
                 },
               },
+            ],
+          },
+          {
+            type: "grid",
+            name: "",
+            schema: [
               {
                 name: "max_messages",
                 selector: {
@@ -347,29 +410,23 @@ function defineCard() {
                 },
               },
               {
-                name: "max_initial_age",
+                name: "message_max_age",
                 selector: {
                   number: {
                     mode: "box",
-                    min: NUMBER_LIMITS.max_initial_age.min,
-                    max: NUMBER_LIMITS.max_initial_age.max,
+                    min: NUMBER_LIMITS.message_max_age.min,
+                    max: NUMBER_LIMITS.message_max_age.max,
                     unit_of_measurement: "s",
                     step: 1,
                   },
                 },
               },
-              {
-                name: "clear_after",
-                selector: {
-                  number: {
-                    mode: "box",
-                    min: NUMBER_LIMITS.clear_after.min,
-                    max: NUMBER_LIMITS.clear_after.max,
-                    unit_of_measurement: "s",
-                    step: 1,
-                  },
-                },
-              },
+            ],
+          },
+          {
+            type: "grid",
+            name: "",
+            schema: [
               {
                 name: "show_header",
                 selector: {
@@ -386,15 +443,13 @@ function defineCard() {
             height_mode: "Height mode",
             height: "Custom height",
             max_messages: "Maximum messages",
-            max_initial_age: "Initial snapshot age",
-            clear_after: "Clear after inactivity",
+            message_max_age: "Hide messages older than",
             show_header: "Show header",
           })[schema.name],
         computeHelper: (schema) =>
           ({
             height: "Used when height mode is Custom.",
-            max_initial_age: "Ignore older debug snapshots when the card loads.",
-            clear_after: "Set to 0 to keep messages visible.",
+            message_max_age: "Set to 0 to keep messages visible.",
           })[schema.name],
         assertConfig: (config) => {
           normalizeConfig(config);
@@ -420,7 +475,7 @@ function defineCard() {
       this._statusMessage = "";
       this._unsubscribe = undefined;
       this._subscribedEntity = undefined;
-      this._clearTimer = undefined;
+      this._messageAgeTimer = undefined;
       this._manualReconnectTimer = undefined;
       this._manualReconnectDelay = 1000;
       this._scrollAnimationFrames = [];
@@ -444,9 +499,15 @@ function defineCard() {
         this._messages = [];
         this._subscribedEntity = undefined;
         this._unsubscribeSubscription();
+      } else {
+        this._messages = applyMessageMaxAge(
+          trimMessages(sortMessages(this._messages), this._config.max_messages),
+          this._config.message_max_age
+        );
       }
 
       this._render();
+      this._scheduleMessageExpiry();
       this._subscribeIfReady();
     }
 
@@ -472,6 +533,7 @@ function defineCard() {
       this._render();
       this._addHeightListeners();
       this._addConnectionListeners();
+      this._scheduleMessageExpiry();
       this._subscribeIfReady();
     }
 
@@ -556,7 +618,7 @@ function defineCard() {
         this._stickToBottom = true;
       }
       this._setStatus("ready", "", false);
-      this._scheduleClear();
+      this._scheduleMessageExpiry();
       this._render();
     }
 
@@ -656,21 +718,48 @@ function defineCard() {
       }
     }
 
-    _scheduleClear() {
-      if (this._clearTimer) {
-        window.clearTimeout(this._clearTimer);
-        this._clearTimer = undefined;
+    _scheduleMessageExpiry() {
+      if (this._messageAgeTimer) {
+        window.clearTimeout(this._messageAgeTimer);
+        this._messageAgeTimer = undefined;
       }
 
-      if (!this._config?.clear_after || this._messages.length === 0) {
+      if (!this._connected || !this._config || this._messages.length === 0) {
         return;
       }
 
-      this._clearTimer = window.setTimeout(() => {
-        this._clearTimer = undefined;
-        this._messages = [];
+      const nowMs = Date.now();
+      const filteredMessages = applyMessageMaxAge(
+        this._messages,
+        this._config.message_max_age,
+        nowMs
+      );
+      if (filteredMessages.length !== this._messages.length) {
+        this._messages = filteredMessages;
         this._render();
-      }, this._config.clear_after * 1000);
+      }
+
+      const expiryMs = nextMessageExpiryMs(
+        this._messages,
+        this._config.message_max_age,
+        nowMs
+      );
+      if (expiryMs === undefined) {
+        return;
+      }
+
+      this._messageAgeTimer = window.setTimeout(() => {
+        this._messageAgeTimer = undefined;
+        const nextMessages = applyMessageMaxAge(
+          this._messages,
+          this._config.message_max_age
+        );
+        if (nextMessages.length !== this._messages.length) {
+          this._messages = nextMessages;
+          this._render();
+        }
+        this._scheduleMessageExpiry();
+      }, Math.max(1, expiryMs - nowMs + 1));
     }
 
     _clearTimers() {
@@ -680,9 +769,9 @@ function defineCard() {
         this._resizeObserver.disconnect();
         this._resizeObserver = undefined;
       }
-      if (this._clearTimer) {
-        window.clearTimeout(this._clearTimer);
-        this._clearTimer = undefined;
+      if (this._messageAgeTimer) {
+        window.clearTimeout(this._messageAgeTimer);
+        this._messageAgeTimer = undefined;
       }
     }
 
@@ -794,7 +883,7 @@ function defineCard() {
         bubble.classList.add("error");
       }
 
-      if (hasVisibleText(message)) {
+      if (hasDisplayText(message)) {
         appendTextContent(bubble, message.text);
       } else if (message.status === "placeholder" || message.status === "streaming") {
         bubble.append(renderActivityDots());
@@ -934,8 +1023,16 @@ function defineCard() {
   });
 }
 
-function hasVisibleText(message) {
-  return typeof message?.text === "string" && message.text.trim().length > 0;
+export function hasDisplayText(message) {
+  if (typeof message?.text !== "string") {
+    return false;
+  }
+
+  if (message.status === "placeholder" || message.status === "streaming") {
+    return message.text.trim().length > 0;
+  }
+
+  return true;
 }
 
 function appendTextContent(parent, text) {

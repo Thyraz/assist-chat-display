@@ -84,8 +84,7 @@ Storage-mode dashboards should get the card resource automatically:
 type: custom:assist-chat-display-card
 entity: assist_satellite.living_room
 max_messages: 20
-max_initial_age: 300
-clear_after: 0
+message_max_age: 300
 show_header: false
 ```
 

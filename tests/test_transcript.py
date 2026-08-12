@@ -115,6 +115,63 @@ class TranscriptNormalizationTest(unittest.TestCase):
         self.assertEqual(deltas[0].message.text, "The garage door is closed.")
         self.assertEqual(deltas[0].message.status, "final")
 
+    def test_empty_final_response_finalizes_thinking_only_assistant_message(self) -> None:
+        snapshot = build_snapshot(
+            [
+                run(
+                    "run_silent",
+                    [
+                        event(
+                            "run-start",
+                            {"satellite_id": "assist_satellite.kitchen"},
+                            "2026-08-12T15:08:59Z",
+                        ),
+                        event(
+                            "stt-end",
+                            {"stt_output": {"text": "Background speech"}},
+                            "2026-08-12T15:09:06Z",
+                        ),
+                        event(
+                            "intent-progress",
+                            {
+                                "chat_log_delta": {
+                                    "role": "assistant",
+                                    "thinking_content": "This looks like a false wake word.",
+                                }
+                            },
+                            "2026-08-12T15:09:07Z",
+                        ),
+                        event(
+                            "intent-end",
+                            {
+                                "intent_output": {
+                                    "response": {
+                                        "response_type": "action_done",
+                                        "speech": {"plain": {"speech": ""}},
+                                    },
+                                    "conversation_id": "conv_1",
+                                }
+                            },
+                            "2026-08-12T15:09:08Z",
+                        ),
+                        event("run-end", None, "2026-08-12T15:09:08Z"),
+                    ],
+                )
+            ],
+            "assist_satellite.kitchen",
+            generated_at="2026-08-12T15:09:09Z",
+        )
+
+        self.assertEqual(len(snapshot.messages), 2)
+        self.assertEqual(snapshot.messages[1].role, "assistant")
+        self.assertEqual(snapshot.messages[1].text, "")
+        self.assertEqual(snapshot.messages[1].status, "final")
+        self.assertEqual(snapshot.messages[1].updated_at, "2026-08-12T15:09:08Z")
+        self.assertEqual(
+            snapshot.messages[1].details["thinking_content"],
+            "This looks like a false wake word.",
+        )
+
     def test_filters_by_satellite_and_counts_unattributed_runs(self) -> None:
         snapshot = build_snapshot(
             [

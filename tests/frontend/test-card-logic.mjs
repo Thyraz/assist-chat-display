@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 
 import {
+  applyMessageMaxAge,
   applyTranscriptEvent,
+  hasDisplayText,
   hydrateFromSnapshot,
   isNearBottom,
-  isSnapshotFresh,
+  messageActivityMs,
+  nextMessageExpiryMs,
   normalizeConfig,
   remainingViewportHeight,
   upsertMessages,
@@ -40,8 +43,7 @@ assert.deepEqual(
     height_mode: "custom",
     height: " calc(100dvh - 80px) ",
     max_messages: "999",
-    max_initial_age: "300",
-    clear_after: "10",
+    message_max_age: "999999",
     show_header: true,
   }),
   {
@@ -51,8 +53,7 @@ assert.deepEqual(
     height_mode: "custom",
     height: "calc(100dvh - 80px)",
     max_messages: 100,
-    max_initial_age: 300,
-    clear_after: 10,
+    message_max_age: 86400,
     show_header: true,
   }
 );
@@ -96,19 +97,46 @@ assert.equal(remainingViewportHeight(800, 900), 240);
 assert.equal(remainingViewportHeight(Number.NaN, 900), 240);
 
 assert.equal(
-  isSnapshotFresh(snapshot("2026-08-11T19:56:00.000Z", []), 300, now),
-  true
-);
-assert.equal(
-  isSnapshotFresh(snapshot("2026-08-11T19:54:00.000Z", []), 300, now),
-  false
+  messageActivityMs(message("run_time:user", "user", "Recent", "final")),
+  Date.parse("2026-08-11T19:59:00.000Z")
 );
 
-const firstSnapshot = snapshot("2026-08-11T19:59:30.000Z", [
+assert.deepEqual(
+  applyMessageMaxAge(
+    [
+      message("run_recent:user", "user", "Recent", "final"),
+      message("run_old:user", "user", "Old", "final", "2026-08-11T19:50:00.000Z"),
+    ],
+    300,
+    now
+  ).map((item) => item.id),
+  ["run_recent:user"]
+);
+
+assert.deepEqual(
+  applyMessageMaxAge(
+    [message("run_old:user", "user", "Old", "final", "2026-08-11T19:50:00.000Z")],
+    0,
+    now
+  ).map((item) => item.id),
+  ["run_old:user"]
+);
+
+assert.equal(
+  nextMessageExpiryMs(
+    [message("run_recent:user", "user", "Recent", "final")],
+    300,
+    now
+  ),
+  Date.parse("2026-08-11T20:04:00.000Z")
+);
+
+const firstSnapshot = snapshot("2026-08-11T19:50:00.000Z", [
   message("run_1:user", "user", "Wie wird das Wetter?", "final"),
+  message("run_old:user", "user", "Old", "final", "2026-08-11T19:50:00.000Z"),
 ]);
 assert.deepEqual(
-  hydrateFromSnapshot([], firstSnapshot, { max_messages: 20, max_initial_age: 300 }, now)
+  hydrateFromSnapshot([], firstSnapshot, { max_messages: 20, message_max_age: 300 }, now)
     .map((item) => item.id),
   ["run_1:user"]
 );
@@ -116,24 +144,27 @@ assert.deepEqual(
   applyTranscriptEvent(
     [],
     { type: "snapshot", snapshot: firstSnapshot },
-    { max_messages: 20, max_initial_age: 300 },
+    { max_messages: 20, message_max_age: 300 },
     now
   ).map((item) => item.id),
   ["run_1:user"]
 );
 
-const oldSnapshot = snapshot("2026-08-11T19:50:00.000Z", [
-  message("run_old:user", "user", "Old", "final"),
+const emptySnapshot = snapshot("2026-08-11T19:59:30.000Z", [
+  message("run_old:user", "user", "Old", "final", "2026-08-11T19:50:00.000Z"),
 ]);
 assert.deepEqual(
-  hydrateFromSnapshot([], oldSnapshot, { max_messages: 20, max_initial_age: 300 }, now),
+  hydrateFromSnapshot([], emptySnapshot, { max_messages: 20, message_max_age: 300 }, now),
   []
 );
 assert.deepEqual(
   hydrateFromSnapshot(
-    [message("run_keep:user", "user", "Keep", "final")],
-    oldSnapshot,
-    { max_messages: 20, max_initial_age: 300 },
+    [
+      message("run_keep:user", "user", "Keep", "final"),
+      message("run_drop:user", "user", "Drop", "final", "2026-08-11T19:50:00.000Z"),
+    ],
+    { messages: undefined },
+    { max_messages: 20, message_max_age: 300 },
     now
   ).map((item) => item.id),
   ["run_keep:user"]
@@ -145,7 +176,7 @@ let messages = applyTranscriptEvent(
     type: "message_add",
     message: message("run_2:assistant", "assistant", "", "streaming"),
   },
-  { max_messages: 20, max_initial_age: 300 },
+  { max_messages: 20, message_max_age: 300 },
   now
 );
 assert.equal(messages[0].status, "streaming");
@@ -163,12 +194,31 @@ messages = applyTranscriptEvent(
       "2026-08-11T19:59:10.000Z"
     ),
   },
-  { max_messages: 20, max_initial_age: 300 },
+  { max_messages: 20, message_max_age: 300 },
   now
 );
 assert.equal(messages.length, 1);
 assert.equal(messages[0].text, "Final answer");
 assert.equal(messages[0].status, "final");
+
+assert.deepEqual(
+  applyTranscriptEvent(
+    messages,
+    {
+      type: "message_add",
+      message: message(
+        "run_expired:assistant",
+        "assistant",
+        "Expired",
+        "final",
+        "2026-08-11T19:50:00.000Z"
+      ),
+    },
+    { max_messages: 20, message_max_age: 300 },
+    now
+  ).map((item) => item.id),
+  ["run_2:assistant"]
+);
 
 const newerBrowserMessage = message(
   "run_3:assistant",
@@ -185,7 +235,7 @@ const olderSnapshotMessage = message(
   "2026-08-11T19:59:40.000Z"
 );
 assert.equal(
-  upsertMessages([newerBrowserMessage], [olderSnapshotMessage], 20)[0].text,
+  upsertMessages([newerBrowserMessage], [olderSnapshotMessage], 20, 300, now)[0].text,
   "Newer browser text"
 );
 
@@ -195,9 +245,28 @@ const trimmed = upsertMessages(
     message("run_2:user", "user", "2", "final", "2026-08-11T19:59:02.000Z"),
   ],
   [message("run_3:user", "user", "3", "final", "2026-08-11T19:59:03.000Z")],
-  2
+  2,
+  300,
+  now
 );
 assert.deepEqual(
   trimmed.map((item) => item.text),
   ["2", "3"]
+);
+
+assert.equal(
+  hasDisplayText(message("run_space:assistant", "assistant", " ", "final")),
+  true
+);
+assert.equal(
+  hasDisplayText(message("run_empty:assistant", "assistant", "", "final")),
+  true
+);
+assert.equal(
+  hasDisplayText(message("run_space:assistant", "assistant", " ", "streaming")),
+  false
+);
+assert.equal(
+  hasDisplayText(message("run_text:assistant", "assistant", "Hello", "streaming")),
+  true
 );

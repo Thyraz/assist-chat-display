@@ -51,8 +51,7 @@ entity: assist_satellite.living_room
 display_scale: 100
 height_mode: default
 max_messages: 20
-max_initial_age: 300
-clear_after: 0
+message_max_age: 300
 show_header: false
 ```
 
@@ -65,8 +64,7 @@ Options:
 | `height_mode` | `default` | Height behavior: `default`, `viewport`, or `custom`. |
 | `height` | `""` | CSS height used when `height_mode` is `custom`, for example `720px` or `calc(100dvh - 80px)`. |
 | `max_messages` | `20` | Maximum number of bubbles kept in the browser. |
-| `max_initial_age` | `300` | Ignore older messages when the card loads, in seconds. |
-| `clear_after` | `0` | Clear the card after inactivity, in seconds. `0` disables auto-clear. |
+| `message_max_age` | `300` | Hide individual bubbles older than this many seconds. Set to `0` to keep messages visible. |
 | `show_header` | `false` | Show the selected satellite name above the bubbles. |
 
 In the visual editor, `display_scale` uses Home Assistant's standard number slider control.
