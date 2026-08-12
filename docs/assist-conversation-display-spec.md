@@ -44,7 +44,11 @@ The card must not parse raw Home Assistant Assist pipeline debug events. It cons
 
 For passive display of existing satellites, use backend-side adaptive polling of Home Assistant's in-memory Assist pipeline debug runs.
 
-Polling is triggered or accelerated when a watched Assist Satellite enters active states such as `listening`, `processing`, or `responding`. The integration polls around 100-200 ms while active, slows after idle, and coalesces browser updates to avoid UI churn.
+The broker subscribes to state changes for watched Assist Satellites. When a satellite enters or leaves active states such as `listening`, `processing`, or `responding`, the state change wakes the poll loop immediately instead of waiting for the idle timer. The integration polls around 100-200 ms while active, slows after idle, and coalesces browser updates to avoid UI churn.
+
+Satellite state changes are only wakeup signals. Displayed Conversation messages still come from real Assist debug run data, not synthetic satellite state placeholders.
+
+WebSocket subscription poll loops are Home Assistant background tasks. They may live as long as a browser keeps the card open and must not block Home Assistant startup.
 
 Current Home Assistant does not expose passive Assist pipeline events as ordinary event-bus events. The built-in Assist chat gets live events because it starts its own pipeline run through `assist_pipeline/run`; that is not the same problem as observing a Voice PE or other existing satellite.
 

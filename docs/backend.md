@@ -8,7 +8,7 @@ Status: stable V1 release.
 - Minimal setup-only config flow to load the integration in Home Assistant.
 - `assist_chat_display.get_transcript` response-only action.
 - `assist_chat_display/subscribe` WebSocket command.
-- Backend Assist Transcript Broker with adaptive polling while a satellite is active or a transcript message is in-flight.
+- Backend Assist Transcript Broker with adaptive background polling and satellite state-change wakeups while a satellite is active or a transcript message is in-flight.
 - Pure transcript normalizer with unit tests.
 - Bundled `custom:assist-chat-display-card` served from the integration.
 - Automatic Lovelace resource registration for storage-mode dashboards.
@@ -112,6 +112,8 @@ logger:
 - No persistent backend transcript history.
 - No transcript entities or diagnostic sensors.
 - The backend reads Home Assistant's current in-memory Assist debug runs, which are limited to recent runs and are cleared on restart.
+- Live WebSocket polling runs as a Home Assistant background task so an already-open dashboard cannot block Home Assistant startup.
+- Assist Satellite state changes only wake the poll loop. They do not create synthetic transcript messages.
 - Runs without `run-start.data.satellite_id` are ignored for satellite-specific transcripts.
 - Thinking/tool details are kept in the data model but not exposed in the V1 room UI.
 - Implementation was checked against Home Assistant Core `2026.8.1` and Frontend `20260729.6`; re-check source before changing Assist capture behavior.

@@ -1,6 +1,6 @@
 # Home Assistant Source Baseline
 
-Last checked: 2026-08-11.
+Last checked: 2026-08-12.
 
 ## Current Baseline
 
@@ -18,7 +18,7 @@ Last checked: 2026-08-11.
 - `frontend/src/dialogs/voice-command-dialog/ha-voice-command-dialog.ts`
 - `homeassistant/components/lovelace/resources.py`
 - `homeassistant/components/lovelace/const.py`
-- Home Assistant developer docs for Assist satellite entities, Conversation entities, WebSocket APIs, service actions with response data, and frontend/custom card APIs.
+- Home Assistant developer docs for Assist satellite entities, Conversation entities, WebSocket APIs, service actions with response data, frontend/custom card APIs, and event helpers.
 
 ## Findings Relevant To This Project
 
@@ -28,6 +28,7 @@ Last checked: 2026-08-11.
 - The built-in Assist chat uses `intent-progress` events containing `chat_log_delta` to update an in-flight assistant message, then uses `intent-end` to replace the visible text with the final response.
 - The built-in Assist chat receives these events by starting its own pipeline run through the `assist_pipeline/run` WebSocket subscription. That path is not a passive observer API for existing `assist_satellite.*` runs started by devices such as Voice PE.
 - Current frontend types include `chat_log_delta`, `thinking_content`, `tool_calls`, `tool_result`, and `tts_start_streaming` on Assist pipeline progress events.
+- Use `async_track_state_change_event` for targeted Assist Satellite state-change wakeups. The older `async_track_state_change` helper is deprecated and should not be used.
 - Service actions can return JSON-serializable response data with `SupportsResponse.ONLY`; service actions should be registered in `async_setup`.
 - Custom cards are custom elements and can define `getConfigForm`, `getStubConfig`, `getCardSize`, and `getGridOptions`.
 - Custom card picker suggestions use `window.customCards[].getEntitySuggestion`, available since Home Assistant `2026.6`.

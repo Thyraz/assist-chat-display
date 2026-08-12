@@ -5,6 +5,8 @@ For existing Home Assistant `assist_satellite.*` entities, this project will use
 ## Consequences
 
 - The browser card subscribes to this integration's WebSocket API instead of calling Home Assistant Assist debug WebSocket commands directly.
-- Polling starts or accelerates when watched Assist Satellites enter active states such as `listening`, `processing`, or `responding`.
+- Poll loops are Home Assistant background tasks because they can live as long as a browser subscription and must not block Home Assistant startup.
+- Polling starts immediately on subscribe, wakes on watched Assist Satellite state changes, and accelerates while satellites are in active states such as `listening`, `processing`, or `responding`.
+- Satellite state changes are not converted into transcript messages; they only wake the debug-cache poll loop.
 - The backend normalizes Assist events, including `intent-progress.data.chat_log_delta`, before sending transcript events to Transcript Consumers.
 - This depends on Home Assistant internals and must be re-checked against the current Home Assistant source before implementation changes.
