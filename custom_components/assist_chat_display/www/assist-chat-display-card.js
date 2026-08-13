@@ -600,6 +600,7 @@ function defineCard() {
 
       const unsubscribe = this._unsubscribe;
       this._unsubscribe = undefined;
+      this._subscribedEntity = undefined;
       try {
         await unsubscribe();
       } catch (error) {

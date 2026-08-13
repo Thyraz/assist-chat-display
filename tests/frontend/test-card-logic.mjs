@@ -270,3 +270,94 @@ assert.equal(
   hasDisplayText(message("run_text:assistant", "assistant", "Hello", "streaming")),
   true
 );
+
+class TestElement {
+  constructor() {
+    this.style = { setProperty() {} };
+    this.hidden = false;
+  }
+
+  attachShadow() {
+    this.shadowRoot = {
+      innerHTML: "",
+      querySelector: () => ({
+        addEventListener() {},
+        replaceChildren() {},
+        style: {},
+        hidden: false,
+        textContent: "",
+      }),
+      querySelectorAll: () => [],
+    };
+    return this.shadowRoot;
+  }
+
+  toggleAttribute(name, value) {
+    this[name] = Boolean(value);
+  }
+}
+
+const registry = new Map();
+globalThis.HTMLElement = TestElement;
+globalThis.window = {
+  customElements: {
+    get: (name) => registry.get(name),
+    define: (name, klass) => registry.set(name, klass),
+  },
+  addEventListener() {},
+  removeEventListener() {},
+  requestAnimationFrame: (callback) => setTimeout(callback, 0),
+  cancelAnimationFrame: clearTimeout,
+  innerHeight: 800,
+};
+globalThis.customElements = globalThis.window.customElements;
+globalThis.document = {
+  createElement: (tag) => ({
+    tag,
+    className: "",
+    style: {},
+    hidden: false,
+    textContent: "",
+    setAttribute() {},
+    append() {},
+    replaceChildren() {},
+    addEventListener() {},
+  }),
+};
+
+await import(
+  "../../custom_components/assist_chat_display/www/assist-chat-display-card.js?lifecycle-test"
+);
+
+const Card = registry.get("assist-chat-display-card");
+const card = new Card();
+card._render = () => {};
+card._addHeightListeners = () => {};
+card._removeHeightListeners = () => {};
+card._addConnectionListeners = () => {};
+card._removeConnectionListeners = () => {};
+card._setCardHeight = () => {};
+card._clearTimers = () => {};
+
+let subscribeCalls = 0;
+let unsubscribeCalls = 0;
+const connection = {
+  subscribeMessage: async () => {
+    subscribeCalls += 1;
+    return async () => {
+      unsubscribeCalls += 1;
+    };
+  },
+};
+
+card.hass = { connection, states: {} };
+card.setConfig({ entity: "assist_satellite.kitchen" });
+card.connectedCallback();
+await new Promise((resolve) => setTimeout(resolve, 0));
+card.disconnectedCallback();
+await new Promise((resolve) => setTimeout(resolve, 0));
+card.connectedCallback();
+await new Promise((resolve) => setTimeout(resolve, 0));
+
+assert.equal(subscribeCalls, 2);
+assert.equal(unsubscribeCalls, 1);

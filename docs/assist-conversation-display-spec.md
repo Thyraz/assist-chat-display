@@ -195,6 +195,7 @@ Final replacement uses the same id:
 - Support frontend-only Message Max Age through `message_max_age`, defaulting to 300 seconds and using `0` to keep messages visible.
 - Keep the card header optional and disabled by default for wall-tablet layouts.
 - Reconnect WebSocket subscriptions automatically with backoff after connection loss or Home Assistant restart.
+- Support Home Assistant card Visibility by disconnecting while hidden and resubscribing with a fresh Recent Transcript Snapshot when shown again.
 - Show compact English errors inside the card for connection, permission, integration, and invalid-entity failures.
 - Keep the empty state empty with no header and no explanatory text.
 - On Assist errors, keep the user bubble and show a compact Assist Error Bubble with technical details expandable.
